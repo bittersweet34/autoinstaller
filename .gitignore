@@ -1,6 +1,7 @@
 bin/
 obj/
 output/
+release/
 *.user
 .vs/
 setup-FIXED.exe

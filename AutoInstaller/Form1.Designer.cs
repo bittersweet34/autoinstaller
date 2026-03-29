@@ -17,7 +17,7 @@ partial class Form1
     {
         this.components = new System.ComponentModel.Container();
         this.AutoScaleMode = AutoScaleMode.Dpi;
-        this.ClientSize = new Size(480, 645);
+        this.ClientSize = new Size(480, 685);
         this.Text = "Auto Installer";
         this.FormBorderStyle = FormBorderStyle.FixedSingle;
         this.MaximizeBox = false;
@@ -270,6 +270,18 @@ partial class Form1
             Enabled = false
         };
 
+        // === Test Setup Button ===
+        btnTestSetup = new Button
+        {
+            Text = "\uD83D\uDD27 Test Setup Exe...",
+            Location = new Point(16, 644),
+            Size = new Size(445, 32),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(60, 60, 90),
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 10F)
+        };
+
         // === Add Controls ===
         this.Controls.Add(lblTitle);
         this.Controls.Add(grpFolder);
@@ -284,6 +296,7 @@ partial class Form1
         this.Controls.Add(txtLog);
         this.Controls.Add(btnStart);
         this.Controls.Add(btnStop);
+        this.Controls.Add(btnTestSetup);
     }
 
     private Label lblTitle;
@@ -309,4 +322,5 @@ partial class Form1
     private TextBox txtLog;
     private Button btnStart;
     private Button btnStop;
+    private Button btnTestSetup;
 }

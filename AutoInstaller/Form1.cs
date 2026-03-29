@@ -45,6 +45,7 @@ public partial class Form1 : Form
         btnBrowseInstall.Click += BtnBrowseInstall_Click;
         btnStart.Click += BtnStart_Click;
         btnStop.Click += BtnStop_Click;
+        btnTestSetup.Click += BtnTestSetup_Click;
         cmbDrive.SelectedIndexChanged += CmbDrive_SelectedIndexChanged;
     }
 
@@ -402,12 +403,13 @@ public partial class Form1 : Form
 
         try
         {
-            // Inno Setup silent install flags
+            // Run as admin with silent install flags
             var psi = new ProcessStartInfo
             {
                 FileName = _detectedSetupPath,
                 Arguments = $"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=\"{installDir}\"",
-                UseShellExecute = false
+                UseShellExecute = true,
+                Verb = "runas"
             };
 
             var proc = Process.Start(psi);
@@ -439,6 +441,12 @@ public partial class Form1 : Form
                 });
             }
         }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            SetStatus("UAC prompt declined");
+            Log("User cancelled the UAC elevation prompt");
+            SetWatching(false);
+        }
         catch (Exception ex)
         {
             SetStatus("Error launching installer");
@@ -466,6 +474,64 @@ public partial class Form1 : Form
     private void SetStatus(string text)
     {
         lblStatus.Text = $"Status: {text}";
+    }
+
+    private void BtnTestSetup_Click(object? sender, EventArgs e)
+    {
+        using var dlg = new OpenFileDialog
+        {
+            Title = "Select a setup.exe to test",
+            Filter = "Executables (*.exe)|*.exe|All files (*.*)|*.*"
+        };
+        if (dlg.ShowDialog() != DialogResult.OK) return;
+
+        string testPath = dlg.FileName;
+        var drive = cmbDrive.SelectedItem as DriveItem;
+        string installDir = txtInstallPath.Text.Trim();
+        if (string.IsNullOrWhiteSpace(installDir) && drive != null)
+        {
+            installDir = Path.Combine(drive.DrivePath, "InstalledApps");
+        }
+
+        Log($"TEST: Launching {testPath}");
+        Log($"TEST: Install dir → {installDir}");
+        SetStatus("Testing setup...");
+
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = testPath,
+                Arguments = $"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=\"{installDir}\"",
+                UseShellExecute = true,
+                Verb = "runas"
+            };
+
+            var proc = Process.Start(psi);
+            if (proc != null)
+            {
+                Log("TEST: Setup launched with elevation");
+                Task.Run(async () =>
+                {
+                    await proc.WaitForExitAsync();
+                    this.BeginInvoke(() =>
+                    {
+                        Log($"TEST: Exited with code {proc.ExitCode}");
+                        SetStatus(proc.ExitCode == 0 ? "Test complete!" : $"Test exited code {proc.ExitCode}");
+                    });
+                });
+            }
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            Log("TEST: User cancelled UAC prompt");
+            SetStatus("Test cancelled (UAC declined)");
+        }
+        catch (Exception ex)
+        {
+            Log($"TEST: Error — {ex.Message}");
+            SetStatus("Test error");
+        }
     }
 
     private void Log(string msg)
