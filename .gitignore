@@ -1,0 +1,6 @@
+bin/
+obj/
+output/
+*.user
+.vs/
+setup-FIXED.exe
