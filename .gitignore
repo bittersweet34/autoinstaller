@@ -3,6 +3,7 @@ obj/
 output/
 release/
 release2/
+release3/
 *.user
 *.pdb
 .vs/

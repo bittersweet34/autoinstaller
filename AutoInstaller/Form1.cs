@@ -7,6 +7,9 @@ public partial class Form1 : Form
     private FileSystemWatcher? _watcher;
     private System.Windows.Forms.Timer? _countdownTimer;
     private System.Windows.Forms.Timer? _quietTimer;
+    private System.Windows.Forms.Timer? _installTimer;
+    private DateTime _installStartTime;
+    private string? _installDir;
     private int _countdownRemaining;
     private string? _detectedSetupPath;
     private CancellationTokenSource? _cts;
@@ -230,6 +233,9 @@ public partial class Form1 : Form
         _quietTimer?.Stop();
         _quietTimer?.Dispose();
         _quietTimer = null;
+        _installTimer?.Stop();
+        _installTimer?.Dispose();
+        _installTimer = null;
         _countdownTimer?.Stop();
         _countdownTimer?.Dispose();
         _countdownTimer = null;
@@ -419,8 +425,15 @@ public partial class Form1 : Form
             var proc = Process.Start(psi);
             if (proc != null)
             {
-                SetStatus("Installer running...");
                 Log("Setup launched with /VERYSILENT");
+
+                // Start elapsed timer
+                _installStartTime = DateTime.Now;
+                _installDir = installDir;
+                progressBar.Style = ProgressBarStyle.Marquee;
+                _installTimer = new System.Windows.Forms.Timer { Interval = 1000 };
+                _installTimer.Tick += InstallTimerTick;
+                _installTimer.Start();
 
                 // Monitor in background
                 Task.Run(async () =>
@@ -428,17 +441,25 @@ public partial class Form1 : Form
                     await proc.WaitForExitAsync();
                     this.BeginInvoke(() =>
                     {
+                        _installTimer?.Stop();
+                        _installTimer?.Dispose();
+                        _installTimer = null;
+                        progressBar.Style = ProgressBarStyle.Continuous;
+                        progressBar.Value = progressBar.Maximum;
+
+                        var elapsed = DateTime.Now - _installStartTime;
                         int code = proc.ExitCode;
                         if (code == 0)
                         {
-                            SetStatus("Install complete!");
-                            Log($"Finished — exit code {code}");
-                            progressBar.Value = progressBar.Maximum;
+                            string size = GetFolderSizeString(installDir);
+                            SetStatus($"Install complete! ({FormatTime((int)elapsed.TotalSeconds)}, {size})");
+                            Log($"Finished in {FormatTime((int)elapsed.TotalSeconds)} — exit code {code}");
+                            Log($"Installed size: {size}");
                         }
                         else
                         {
-                            SetStatus($"Installer exited with code {code}");
-                            Log($"Exit code: {code}");
+                            SetStatus($"Installer exited with code {code} ({FormatTime((int)elapsed.TotalSeconds)})");
+                            Log($"Exit code: {code} after {FormatTime((int)elapsed.TotalSeconds)}");
                         }
                         SetWatching(false);
                     });
@@ -574,5 +595,41 @@ public partial class Form1 : Form
             cleaned = cleaned.Replace(c, '_');
 
         return cleaned;
+    }
+
+    private void InstallTimerTick(object? sender, EventArgs e)
+    {
+        var elapsed = DateTime.Now - _installStartTime;
+        string elapsedStr = FormatTime((int)elapsed.TotalSeconds);
+
+        if (_installDir != null && Directory.Exists(_installDir))
+        {
+            string size = GetFolderSizeString(_installDir);
+            SetStatus($"Installing... {elapsedStr} elapsed \u2014 {size} written");
+        }
+        else
+        {
+            SetStatus($"Installing... {elapsedStr} elapsed");
+        }
+    }
+
+    private static string GetFolderSizeString(string path)
+    {
+        try
+        {
+            if (!Directory.Exists(path)) return "0 MB";
+            long bytes = new DirectoryInfo(path)
+                .EnumerateFiles("*", SearchOption.AllDirectories)
+                .Sum(f => f.Length);
+
+            if (bytes >= 1_073_741_824)
+                return $"{bytes / 1_073_741_824.0:F1} GB";
+            else
+                return $"{bytes / 1_048_576.0:F1} MB";
+        }
+        catch
+        {
+            return "? MB";
+        }
     }
 }
