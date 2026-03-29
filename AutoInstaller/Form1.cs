@@ -391,25 +391,29 @@ public partial class Form1 : Form
         if (_detectedSetupPath == null) return;
 
         var drive = (DriveItem)cmbDrive.SelectedItem!;
-        string installDir = txtInstallPath.Text.Trim();
-        if (string.IsNullOrWhiteSpace(installDir))
+        string baseDir = txtInstallPath.Text.Trim();
+        if (string.IsNullOrWhiteSpace(baseDir))
         {
-            installDir = Path.Combine(drive.DrivePath, "InstalledApps");
+            baseDir = Path.Combine(drive.DrivePath, "InstalledApps");
         }
 
+        // Create a game-named subfolder from the setup's parent folder
+        string gameName = GetGameName(_detectedSetupPath);
+        string installDir = Path.Combine(baseDir, gameName);
+
+        Log($"Game detected: {gameName}");
+        Log($"Install folder: {installDir}");
         SetStatus("Launching installer...");
-        Log($"Running: {_detectedSetupPath} → {installDir}");
         progressBar.Value = progressBar.Maximum;
 
         try
         {
-            // Run as admin with silent install flags
+            // Run as admin (app already elevated via manifest)
             var psi = new ProcessStartInfo
             {
                 FileName = _detectedSetupPath,
                 Arguments = $"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=\"{installDir}\"",
-                UseShellExecute = true,
-                Verb = "runas"
+                UseShellExecute = true
             };
 
             var proc = Process.Start(psi);
@@ -487,12 +491,16 @@ public partial class Form1 : Form
 
         string testPath = dlg.FileName;
         var drive = cmbDrive.SelectedItem as DriveItem;
-        string installDir = txtInstallPath.Text.Trim();
-        if (string.IsNullOrWhiteSpace(installDir) && drive != null)
+        string baseDir = txtInstallPath.Text.Trim();
+        if (string.IsNullOrWhiteSpace(baseDir) && drive != null)
         {
-            installDir = Path.Combine(drive.DrivePath, "InstalledApps");
+            baseDir = Path.Combine(drive.DrivePath, "InstalledApps");
         }
 
+        string gameName = GetGameName(testPath);
+        string installDir = Path.Combine(baseDir, gameName);
+
+        Log($"TEST: Game name: {gameName}");
         Log($"TEST: Launching {testPath}");
         Log($"TEST: Install dir → {installDir}");
         SetStatus("Testing setup...");
@@ -503,8 +511,7 @@ public partial class Form1 : Form
             {
                 FileName = testPath,
                 Arguments = $"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=\"{installDir}\"",
-                UseShellExecute = true,
-                Verb = "runas"
+                UseShellExecute = true
             };
 
             var proc = Process.Start(psi);
@@ -543,5 +550,29 @@ public partial class Form1 : Form
     private record DriveItem(string DrivePath, string DisplayName)
     {
         public override string ToString() => DisplayName;
+    }
+
+    private static string GetGameName(string setupPath)
+    {
+        // Get the parent folder name of the setup exe
+        string? folderPath = Path.GetDirectoryName(setupPath);
+        string folderName = Path.GetFileName(folderPath) ?? "Unknown";
+
+        // Strip common bracket tags like [FitGirl Repack], (v1.2), etc.
+        string cleaned = System.Text.RegularExpressions.Regex.Replace(folderName, @"\s*[\[\(][^\]\)]*[\]\)]", "");
+        cleaned = cleaned.Trim();
+
+        // Remove trailing dashes/underscores from cleanup
+        cleaned = cleaned.TrimEnd('-', '_', ' ');
+
+        // If nothing left after cleanup, use original folder name
+        if (string.IsNullOrWhiteSpace(cleaned))
+            cleaned = folderName;
+
+        // Sanitize for filesystem
+        foreach (char c in Path.GetInvalidFileNameChars())
+            cleaned = cleaned.Replace(c, '_');
+
+        return cleaned;
     }
 }

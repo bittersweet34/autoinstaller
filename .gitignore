@@ -2,6 +2,8 @@ bin/
 obj/
 output/
 release/
+release2/
 *.user
+*.pdb
 .vs/
 setup-FIXED.exe
