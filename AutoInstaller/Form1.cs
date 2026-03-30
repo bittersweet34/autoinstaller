@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Win32;
 
 namespace AutoInstaller;
 
@@ -1527,11 +1528,136 @@ public partial class Form1 : Form
         {
             ctx.Items.Add("Launch", null, (s, e) => LaunchGame(gameName, exePath));
         }
+        ctx.Items.Add("Search artwork on SteamGridDB", null, (s, e) => OpenSteamGridSearch(gameName));
+        ctx.Items.Add("Apply artwork (SGDBoop default from clipboard)", null, (s, e) => RunSgdbFromClipboardDefault());
         card.ContextMenuStrip = ctx;
         foreach (Control c in card.Controls)
             c.ContextMenuStrip = ctx;
 
         return card;
+    }
+
+    private void OpenSteamGridSearch(string gameName)
+    {
+        try
+        {
+            string query = Uri.EscapeDataString(gameName);
+            string url = $"https://www.steamgriddb.com/search/grids?term={query}";
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+            Log($"Opened SteamGridDB search for: {gameName}");
+        }
+        catch (Exception ex)
+        {
+            Log($"Failed to open SteamGridDB: {ex.Message}");
+        }
+    }
+
+    private void RunSgdbFromClipboardDefault()
+    {
+        string raw;
+        try
+        {
+            raw = Clipboard.ContainsText() ? Clipboard.GetText().Trim() : "";
+        }
+        catch
+        {
+            MessageBox.Show("Could not read clipboard right now.", "SGDBoop",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        string uri = ConvertToSgdbUri(raw);
+        if (string.IsNullOrWhiteSpace(uri))
+        {
+            MessageBox.Show(
+                "Copy a SteamGridDB boop link first (sgdb://boop/... or https://www.steamgriddb.com/boop/...).",
+                "SGDBoop link not found",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        if (!IsSgdbProtocolRegistered())
+        {
+            MessageBox.Show(
+                "SGDBoop protocol is not registered. Install SGDBoop and run it once as Administrator first.",
+                "SGDBoop not installed",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "https://github.com/SteamGridDB/SGDBoop/releases/latest/download/sgdboop-win64.zip",
+                    UseShellExecute = true
+                });
+            }
+            catch { }
+            return;
+        }
+
+        string normalized = NormalizeSgdbUriToDefault(uri);
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = normalized,
+                UseShellExecute = true
+            });
+            Log($"SGDBoop launched (default mode): {normalized}");
+        }
+        catch (Exception ex)
+        {
+            Log($"SGDBoop launch failed: {ex.Message}");
+            MessageBox.Show($"Could not launch SGDBoop:\n{ex.Message}", "SGDBoop Error",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private static string ConvertToSgdbUri(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return "";
+        if (text.StartsWith("sgdb://boop/", StringComparison.OrdinalIgnoreCase))
+            return text;
+        const string webPrefix = "https://www.steamgriddb.com/boop/";
+        if (text.StartsWith(webPrefix, StringComparison.OrdinalIgnoreCase))
+            return "sgdb://boop/" + text[webPrefix.Length..];
+        return "";
+    }
+
+    private static string NormalizeSgdbUriToDefault(string uri)
+    {
+        const string prefix = "sgdb://boop/";
+        if (!uri.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            return uri;
+
+        string rest = uri[prefix.Length..];
+        if (string.Equals(rest, "test", StringComparison.OrdinalIgnoreCase))
+            return uri;
+
+        string[] parts = rest.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2)
+            return uri;
+
+        return $"{prefix}{parts[0]}/{parts[1]}/default";
+    }
+
+    private static bool IsSgdbProtocolRegistered()
+    {
+        try
+        {
+            using var key = Registry.ClassesRoot.OpenSubKey("sgdb\\Shell\\Open\\Command");
+            var cmd = key?.GetValue("") as string;
+            return !string.IsNullOrWhiteSpace(cmd);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private void LaunchGame(string gameName, string exePath)
