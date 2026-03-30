@@ -379,25 +379,27 @@ partial class Form1
 
         lblQbtExe = new Label
         {
-            Text = "qBittorrent:",
-            Location = new Point(10, 12), Size = new Size(92, 25),
-            ForeColor = TextDim, Font = new Font("Segoe UI", 9.5F)
+            Text = "♥  Built-in Torrent Client",
+            Location = new Point(10, 8), Size = new Size(220, 25),
+            ForeColor = Accent, Font = new Font("Segoe UI Semibold", 10F)
         };
-        txtQbtExe = MakeTextBox(104, 9, 500, readOnly: true, placeholder: "auto-detected...");
-        btnQbtBrowseExe = MakeBtn("Browse", ControlBg, Accent, 72, 28);
-        btnQbtBrowseExe.Location = new Point(612, 8);
         lblQbtExeStatus = new Label
         {
-            Text = "",
-            Location = new Point(692, 12), Size = new Size(130, 25),
+            Text = "Ready",
+            Location = new Point(240, 10), Size = new Size(200, 25),
             ForeColor = Green,
             Font = new Font("Segoe UI Semibold", 9F)
         };
 
+        btnAddTorrentFile = MakeBtn("+ .torrent", ControlBg, Accent, 88, 28);
+        btnAddTorrentFile.Location = new Point(700, 6);
+        btnAddMagnetLink = MakeBtn("+ Magnet", ControlBg, Accent, 88, 28);
+        btnAddMagnetLink.Location = new Point(794, 6);
+
         chkClipboardMagnet = new CheckBox
         {
             Text = "🧲 Auto-detect magnet links from clipboard",
-            Location = new Point(10, 42), Size = new Size(320, 22),
+            Location = new Point(10, 40), Size = new Size(320, 22),
             ForeColor = TextPrimary, Checked = true,
             Font = new Font("Segoe UI", 9.5F)
         };
@@ -405,15 +407,15 @@ partial class Form1
         lblQbtStatus = new Label
         {
             Text = "",
-            Location = new Point(340, 44), Size = new Size(560, 20),
+            Location = new Point(340, 42), Size = new Size(560, 20),
             ForeColor = Accent,
             Font = new Font("Segoe UI", 9F)
         };
 
         pnlQbtTop.Controls.Add(lblQbtExe);
-        pnlQbtTop.Controls.Add(txtQbtExe);
-        pnlQbtTop.Controls.Add(btnQbtBrowseExe);
         pnlQbtTop.Controls.Add(lblQbtExeStatus);
+        pnlQbtTop.Controls.Add(btnAddTorrentFile);
+        pnlQbtTop.Controls.Add(btnAddMagnetLink);
         pnlQbtTop.Controls.Add(chkClipboardMagnet);
         pnlQbtTop.Controls.Add(lblQbtStatus);
 
@@ -497,6 +499,57 @@ partial class Form1
         pnlNavBar.Controls.Add(txtNavUrl);
         pnlNavBar.Controls.Add(btnNavGo);
 
+        // --- Torrent Dashboard panel (built-in engine) ---
+        pnlTorrentDash = new Panel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 200,
+            BackColor = Panel_,
+            Padding = new Padding(8, 4, 8, 4)
+        };
+
+        // Torrent dashboard header + speed display
+        lblTorrentDashTitle = new Label
+        {
+            Text = "♥ Downloads",
+            Dock = DockStyle.Top,
+            Height = 22,
+            ForeColor = Accent,
+            Font = new Font("Segoe UI Semibold", 9.5F),
+            Padding = new Padding(0, 2, 0, 0)
+        };
+
+        lblTransferSpeeds = new Label
+        {
+            Text = "",
+            Location = new Point(140, 4), Size = new Size(400, 18),
+            ForeColor = TextDim,
+            Font = new Font("Segoe UI", 8.5F),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+        };
+
+        // Collapse / expand button
+        btnToggleDash = MakeBtn("▼", ControlBg, Border, 28, 22);
+        btnToggleDash.Location = new Point(pnlTorrentDash.Width - 36, 2);
+        btnToggleDash.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        btnToggleDash.Font = new Font("Segoe UI", 8F);
+
+        // Torrent list (scrollable)
+        flpTorrents = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoScroll = true,
+            WrapContents = false,
+            FlowDirection = FlowDirection.TopDown,
+            BackColor = Panel_,
+            Padding = new Padding(0, 4, 0, 0)
+        };
+
+        pnlTorrentDash.Controls.Add(flpTorrents);
+        pnlTorrentDash.Controls.Add(lblTransferSpeeds);
+        pnlTorrentDash.Controls.Add(lblTorrentDashTitle);
+        pnlTorrentDash.Controls.Add(btnToggleDash);
+
         // --- WebView2 browser ---
         wvBrowser = new Microsoft.Web.WebView2.WinForms.WebView2
         {
@@ -504,11 +557,12 @@ partial class Form1
             DefaultBackgroundColor = BG
         };
 
-        // Order: Fill first, then Top panels in reverse
+        // Order: Fill first, then Top panels in reverse, then Bottom
         tabQBittorrent.Controls.Add(wvBrowser);
         tabQBittorrent.Controls.Add(pnlNavBar);
         tabQBittorrent.Controls.Add(pnlBookmarks);
         tabQBittorrent.Controls.Add(pnlQbtTop);
+        tabQBittorrent.Controls.Add(pnlTorrentDash);
 
         // ═══════════════════════════════════════════════════
         //  TAB 3 — Library
@@ -666,9 +720,9 @@ partial class Form1
     // --- Tab 2: Browser ---
     private Panel pnlQbtTop;
     private Label lblQbtExe;
-    private TextBox txtQbtExe;
-    private Button btnQbtBrowseExe;
     private Label lblQbtExeStatus;
+    private Button btnAddTorrentFile;
+    private Button btnAddMagnetLink;
     private CheckBox chkClipboardMagnet;
     private Label lblQbtStatus;
     private Panel pnlBookmarks;
@@ -681,4 +735,10 @@ partial class Form1
     private TextBox txtNavUrl;
     private Button btnNavGo;
     private Microsoft.Web.WebView2.WinForms.WebView2 wvBrowser;
+    // Torrent Dashboard (built-in)
+    private Panel pnlTorrentDash;
+    private Label lblTransferSpeeds;
+    private FlowLayoutPanel flpTorrents;
+    private Label lblTorrentDashTitle;
+    private Button btnToggleDash;
 }

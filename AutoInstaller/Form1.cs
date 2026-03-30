@@ -21,8 +21,10 @@ public partial class Form1 : Form
     private bool _installCompleted;
     private static readonly HttpClient _httpClient = new();
 
-    // qBittorrent (local)
-    private string? _qbtExePath;
+    // Built-in torrent engine
+    private TorrentEngine _torrentEngine = new();
+    private System.Windows.Forms.Timer? _torrentRefreshTimer;
+    private bool _dashCollapsed;
 
     // Clipboard magnet
     private System.Windows.Forms.Timer? _clipboardTimer;
@@ -40,11 +42,11 @@ public partial class Form1 : Form
         LoadDrives();
         WireEvents();
         LoadSettings();
-        DetectQBittorrent();
+        InitTorrentEngine();
         InitBrowser();
         LoadBookmarks();
         StartClipboardMonitor();
-        FormClosing += (s, e) => SaveSettings();
+        FormClosing += (s, e) => { SaveSettings(); _torrentEngine.Dispose(); };
         Load += (s, e) => { EnsureClipboardMonitorRunning(); RefreshLibrary(); };
     }
 
@@ -78,11 +80,6 @@ public partial class Form1 : Form
             cmbTimeUnit.SelectedIndex = s.TimeUnitIndex;
         if (!string.IsNullOrEmpty(s.NtfyTopic))
             txtNtfyTopic.Text = s.NtfyTopic;
-        if (!string.IsNullOrEmpty(s.QbtExePath) && File.Exists(s.QbtExePath))
-        {
-            _qbtExePath = s.QbtExePath;
-            txtQbtExe.Text = s.QbtExePath;
-        }
         chkClipboardMagnet.Checked = s.ClipboardMagnet;
         chkInstallDirectX.Checked = s.InstallDirectX;
         chkInstallVCRedist.Checked = s.InstallVCRedist;
@@ -104,7 +101,6 @@ public partial class Form1 : Form
             DelayValue = nudDelay.Value,
             TimeUnitIndex = cmbTimeUnit.SelectedIndex,
             NtfyTopic = txtNtfyTopic.Text.Trim(),
-            QbtExePath = _qbtExePath ?? "",
             ClipboardMagnet = chkClipboardMagnet.Checked,
             InstallDirectX = chkInstallDirectX.Checked,
             InstallVCRedist = chkInstallVCRedist.Checked,
@@ -145,8 +141,10 @@ public partial class Form1 : Form
         btnTestNotify.Click += BtnTestNotify_Click;
         cmbDrive.SelectedIndexChanged += CmbDrive_SelectedIndexChanged;
 
-        // qBittorrent events
-        btnQbtBrowseExe.Click += BtnQbtBrowseExe_Click;
+        // Torrent engine events
+        btnAddMagnetLink.Click += BtnAddMagnetLink_Click;
+        btnAddTorrentFile.Click += BtnAddTorrentFile_Click;
+        btnToggleDash.Click += BtnToggleDash_Click;
 
         // Browser navigation events
         btnNavBack.Click += (s, e) => { try { wvBrowser.GoBack(); } catch { } };
@@ -735,10 +733,14 @@ public partial class Form1 : Form
 
     private string BuildInstallerArgs(string installDir)
     {
-        var args = $"/SILENT /DIR=\"{installDir}\"";
+        var args = $"/SILENT /SUPPRESSMSGBOXES /NORESTART /DIR=\"{installDir}\"";
 
-        // Build /MERGETASKS to suppress unchecked redistributables
+        // Build /MERGETASKS to suppress unchecked items
         var suppress = new List<string>();
+
+        // Always suppress installer sounds/music by default
+        suppress.AddRange(new[] { "!music", "!sounds", "!sound" });
+
         if (!chkInstallDirectX.Checked)
         {
             suppress.AddRange(new[] { "!directx", "!dx", "!redist\\directx" });
@@ -809,6 +811,7 @@ public partial class Form1 : Form
                     try { proc.WaitForExit(); } catch { }
                     int code = 0;
                     try { code = proc.ExitCode; } catch { }
+                    KillProcessTree(proc);
                     this.BeginInvoke(() =>
                     {
                         Log($"TEST: Exited with code {code}");
@@ -915,6 +918,9 @@ public partial class Form1 : Form
         var elapsed = DateTime.Now - _installStartTime;
         int code = 0;
         try { code = _installProc?.ExitCode ?? 0; } catch { }
+
+        // Kill the setup process and any child processes it spawned
+        KillProcessTree(_installProc);
         _installProc = null;
 
         if (code == 0)
@@ -986,6 +992,31 @@ public partial class Form1 : Form
         }
     }
 
+    /// <summary>
+    /// Kill a process and all its child processes.
+    /// </summary>
+    private static void KillProcessTree(Process? proc)
+    {
+        if (proc == null) return;
+        try
+        {
+            int pid = proc.Id;
+            // Use taskkill /T to kill the entire process tree
+            var killPsi = new ProcessStartInfo
+            {
+                FileName = "taskkill",
+                Arguments = $"/F /T /PID {pid}",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            using var killProc = Process.Start(killPsi);
+            killProc?.WaitForExit(5000);
+        }
+        catch { /* process may already be gone */ }
+    }
+
     private static string GetFolderSizeString(string path)
     {
         try
@@ -1053,50 +1084,322 @@ public partial class Form1 : Form
     //  qBittorrent Integration (local)
     // ======================================================
 
-    private void DetectQBittorrent()
+    // ======================================================
+    //  Built-in Torrent Engine
+    // ======================================================
+
+    private void InitTorrentEngine()
     {
-        // Skip auto-detect if already loaded from saved settings
-        if (_qbtExePath != null)
+        lblQbtExeStatus.Text = "✔ Built-in engine ready";
+        lblQbtExeStatus.ForeColor = Green;
+
+        _torrentEngine.DownloadsChanged += () =>
         {
-            lblQbtExeStatus.Text = "\u2714 Found";
-            lblQbtExeStatus.ForeColor = Green;
+            if (IsDisposed) return;
+            try { BeginInvoke(RefreshTorrentDashboard); } catch { }
+        };
+
+        // Periodic UI refresh for speeds/progress
+        _torrentRefreshTimer = new System.Windows.Forms.Timer { Interval = 1500 };
+        _torrentRefreshTimer.Tick += (s, e) => RefreshTorrentDashboard();
+        _torrentRefreshTimer.Start();
+    }
+
+    private async void BtnAddMagnetLink_Click(object? sender, EventArgs e)
+    {
+        string magnetUri = "";
+        try
+        {
+            if (Clipboard.ContainsText())
+            {
+                string clip = Clipboard.GetText().Trim();
+                if (clip.StartsWith("magnet:?", StringComparison.OrdinalIgnoreCase))
+                    magnetUri = clip;
+            }
+        }
+        catch { }
+
+        using var form = new Form
+        {
+            Text = "Add Magnet Link",
+            Size = new Size(600, 150),
+            StartPosition = FormStartPosition.CenterParent,
+            BackColor = BG, ForeColor = TextPrimary,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false, MinimizeBox = false,
+            Font = new Font("Segoe UI", 10F)
+        };
+
+        var lblM = new Label { Text = "Magnet:", Location = new Point(12, 18), Size = new Size(60, 25) };
+        var txtMagnet = new TextBox
+        {
+            Text = magnetUri,
+            Location = new Point(75, 15), Size = new Size(495, 25),
+            BackColor = ControlBg, ForeColor = TextPrimary,
+            BorderStyle = BorderStyle.FixedSingle
+        };
+        var btnOk = MakeBtn("Add", Green, GreenDim, 80, 32);
+        btnOk.Location = new Point(405, 60);
+        btnOk.DialogResult = DialogResult.OK;
+        var btnCancel = MakeBtn("Cancel", Panel_, Border, 80, 32);
+        btnCancel.Location = new Point(490, 60);
+        btnCancel.DialogResult = DialogResult.Cancel;
+
+        form.Controls.AddRange([lblM, txtMagnet, btnOk, btnCancel]);
+        form.AcceptButton = btnOk;
+        form.CancelButton = btnCancel;
+
+        if (form.ShowDialog(this) != DialogResult.OK) return;
+
+        string magnet = txtMagnet.Text.Trim();
+        if (!magnet.StartsWith("magnet:?", StringComparison.OrdinalIgnoreCase))
+        {
+            MessageBox.Show("Invalid magnet link.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
-        _qbtExePath = QBitLocal.FindExePath();
-        if (_qbtExePath != null)
-        {
-            txtQbtExe.Text = _qbtExePath;
-            lblQbtExeStatus.Text = "\u2714 Found";
-            lblQbtExeStatus.ForeColor = Green;
-            Log($"qBittorrent found: {_qbtExePath}");
-        }
-        else
-        {
-            lblQbtExeStatus.Text = "\u2718 Not found — browse manually";
-            lblQbtExeStatus.ForeColor = Red;
-        }
-
+        await AddMagnetToEngineAsync(magnet);
     }
 
-    private void BtnQbtBrowseExe_Click(object? sender, EventArgs e)
+    private async void BtnAddTorrentFile_Click(object? sender, EventArgs e)
     {
         using var dlg = new OpenFileDialog
         {
-            Title = "Select qbittorrent.exe",
-            Filter = "qBittorrent (qbittorrent.exe)|qbittorrent.exe|All files (*.*)|*.*"
+            Title = "Select a .torrent file",
+            Filter = "Torrent files (*.torrent)|*.torrent|All files (*.*)|*.*"
         };
-        if (dlg.ShowDialog() == DialogResult.OK)
+        if (dlg.ShowDialog() != DialogResult.OK) return;
+
+        string savePath = !string.IsNullOrWhiteSpace(txtFolderPath.Text)
+            ? txtFolderPath.Text
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+
+        try
         {
-            _qbtExePath = dlg.FileName;
-            txtQbtExe.Text = _qbtExePath;
-            lblQbtExeStatus.Text = "\u2714 Selected";
-            lblQbtExeStatus.ForeColor = Green;
-            Log($"qBittorrent set to: {_qbtExePath}");
+            Log($"Adding torrent: {Path.GetFileName(dlg.FileName)}");
+            lblQbtStatus.Text = "Adding torrent file...";
+            await _torrentEngine.AddTorrentFileAsync(dlg.FileName, savePath);
+            Log($"Torrent added — downloading to: {savePath}");
+            lblQbtStatus.Text = $"Downloading to: {savePath}";
+            lblQbtStatus.ForeColor = Green;
+        }
+        catch (Exception ex)
+        {
+            Log($"Failed to add torrent: {ex.Message}");
+            lblQbtStatus.Text = "Failed to add torrent";
+            lblQbtStatus.ForeColor = Red;
         }
     }
 
+    private async Task AddMagnetToEngineAsync(string magnetUri, string? savePath = null)
+    {
+        savePath ??= !string.IsNullOrWhiteSpace(txtFolderPath.Text)
+            ? txtFolderPath.Text
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
 
+        try
+        {
+            Log("Adding magnet to built-in torrent engine...");
+            if (savePath != null) Log($"Download path: {savePath}");
+            lblQbtStatus.Text = "Adding magnet...";
+
+            await _torrentEngine.AddMagnetAsync(magnetUri, savePath);
+
+            Log("Magnet added — downloading");
+            lblQbtStatus.Text = $"Downloading to: {savePath}";
+            lblQbtStatus.ForeColor = Green;
+
+            // Auto-start watching if not already active
+            if (!string.IsNullOrWhiteSpace(txtFolderPath.Text) && btnStart.Enabled)
+            {
+                Log("Auto-starting watch for downloaded content...");
+                tabControl.SelectedTab = tabInstaller;
+                BtnStart_Click(null, EventArgs.Empty);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"Failed to add magnet: {ex.Message}");
+            lblQbtStatus.Text = "Failed to add magnet";
+            lblQbtStatus.ForeColor = Red;
+        }
+    }
+
+    private void BtnToggleDash_Click(object? sender, EventArgs e)
+    {
+        _dashCollapsed = !_dashCollapsed;
+        pnlTorrentDash.Height = _dashCollapsed ? 28 : 200;
+        btnToggleDash.Text = _dashCollapsed ? "▲" : "▼";
+    }
+
+    private void RefreshTorrentDashboard()
+    {
+        // Update transfer speeds
+        long dlRate = _torrentEngine.TotalDownloadRate;
+        long ulRate = _torrentEngine.TotalUploadRate;
+        lblTransferSpeeds.Text = (dlRate > 0 || ulRate > 0)
+            ? $"↓ {TorrentEngine.FormatSpeed(dlRate)}  ↑ {TorrentEngine.FormatSpeed(ulRate)}"
+            : "";
+
+        // Build download items
+        var downloads = _torrentEngine.Downloads;
+        if (downloads.Count == 0 && flpTorrents.Controls.Count == 0)
+            return;
+
+        // Rebuild if count changed
+        if (flpTorrents.Controls.Count != downloads.Count)
+        {
+            flpTorrents.SuspendLayout();
+            for (int i = flpTorrents.Controls.Count - 1; i >= 0; i--)
+                flpTorrents.Controls[i].Dispose();
+
+            foreach (var dl in downloads)
+            {
+                var row = CreateTorrentRow(dl);
+                flpTorrents.Controls.Add(row);
+            }
+            flpTorrents.ResumeLayout();
+        }
+        else
+        {
+            // Update existing rows
+            for (int i = 0; i < downloads.Count && i < flpTorrents.Controls.Count; i++)
+            {
+                UpdateTorrentRow(flpTorrents.Controls[i], downloads[i]);
+            }
+        }
+    }
+
+    private Panel CreateTorrentRow(TorrentEngine.DownloadInfo dl)
+    {
+        var mgr = dl.Manager;
+        var row = new Panel
+        {
+            Size = new Size(flpTorrents.ClientSize.Width - 20, 48),
+            BackColor = Surface,
+            Margin = new Padding(2),
+            Tag = dl
+        };
+
+        var lblName = new Label
+        {
+            Name = "lblName",
+            Text = mgr.Torrent?.Name ?? "Getting metadata...",
+            Location = new Point(8, 4),
+            Size = new Size(500, 18),
+            ForeColor = TextPrimary,
+            Font = new Font("Segoe UI", 9F),
+            AutoEllipsis = true
+        };
+
+        var lblInfo = new Label
+        {
+            Name = "lblInfo",
+            Text = GetTorrentInfoText(mgr),
+            Location = new Point(8, 24),
+            Size = new Size(500, 16),
+            ForeColor = TextDim,
+            Font = new Font("Segoe UI", 8F)
+        };
+
+        var pbProgress = new ProgressBar
+        {
+            Name = "pbProgress",
+            Location = new Point(520, 8),
+            Size = new Size(200, 14),
+            Style = ProgressBarStyle.Continuous,
+            Maximum = 1000,
+            Value = (int)(mgr.Progress * 10)
+        };
+
+        var lblPct = new Label
+        {
+            Name = "lblPct",
+            Text = $"{mgr.Progress:F1}%",
+            Location = new Point(520, 26),
+            Size = new Size(60, 16),
+            ForeColor = Accent,
+            Font = new Font("Segoe UI Semibold", 8F)
+        };
+
+        var btnPause = MakeBtn(mgr.State == MonoTorrent.Client.TorrentState.Paused ? "▶" : "⏸", ControlBg, Border, 28, 22);
+        btnPause.Name = "btnPause";
+        btnPause.Location = new Point(730, 12);
+        btnPause.Font = new Font("Segoe UI", 9F);
+        btnPause.Click += async (s, e) =>
+        {
+            if (mgr.State == MonoTorrent.Client.TorrentState.Paused)
+                await _torrentEngine.ResumeAsync(mgr);
+            else
+                await _torrentEngine.PauseAsync(mgr);
+        };
+
+        var btnRemove = MakeBtn("×", Red, RedDim, 28, 22);
+        btnRemove.Location = new Point(762, 12);
+        btnRemove.Font = new Font("Segoe UI", 10F);
+        btnRemove.Click += async (s, e) =>
+        {
+            var result = MessageBox.Show(
+                $"Remove \"{mgr.Torrent?.Name ?? "torrent"}\"?\n\nAlso delete downloaded files?",
+                "Remove Download", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+            if (result == DialogResult.Cancel) return;
+            bool deleteFiles = (result == DialogResult.Yes);
+            await _torrentEngine.RemoveAsync(mgr, deleteFiles);
+            Log($"Removed download{(deleteFiles ? " + files" : "")}");
+        };
+
+        row.Controls.AddRange([lblName, lblInfo, pbProgress, lblPct, btnPause, btnRemove]);
+        return row;
+    }
+
+    private void UpdateTorrentRow(Control row, TorrentEngine.DownloadInfo dl)
+    {
+        var mgr = dl.Manager;
+        var lblName = row.Controls["lblName"];
+        var lblInfo = row.Controls["lblInfo"];
+        var pbProgress = row.Controls["pbProgress"] as ProgressBar;
+        var lblPct = row.Controls["lblPct"];
+        var btnPause = row.Controls["btnPause"] as Button;
+
+        if (lblName != null)
+            lblName.Text = mgr.Torrent?.Name ?? "Getting metadata...";
+        if (lblInfo != null)
+            lblInfo.Text = GetTorrentInfoText(mgr);
+        if (pbProgress != null)
+            pbProgress.Value = Math.Clamp((int)(mgr.Progress * 10), 0, 1000);
+        if (lblPct != null)
+            lblPct.Text = $"{mgr.Progress:F1}%";
+        if (btnPause != null)
+            btnPause.Text = mgr.State == MonoTorrent.Client.TorrentState.Paused ? "▶" : "⏸";
+    }
+
+    private static string GetTorrentInfoText(MonoTorrent.Client.TorrentManager mgr)
+    {
+        string state = mgr.State switch
+        {
+            MonoTorrent.Client.TorrentState.Downloading => "Downloading",
+            MonoTorrent.Client.TorrentState.Seeding => "Seeding",
+            MonoTorrent.Client.TorrentState.Paused => "Paused",
+            MonoTorrent.Client.TorrentState.Hashing => "Checking",
+            MonoTorrent.Client.TorrentState.HashingPaused => "Check paused",
+            MonoTorrent.Client.TorrentState.Metadata => "Getting metadata",
+            MonoTorrent.Client.TorrentState.Stopped => "Stopped",
+            MonoTorrent.Client.TorrentState.Stopping => "Stopping",
+            MonoTorrent.Client.TorrentState.Error => "Error",
+            _ => mgr.State.ToString()
+        };
+
+        long dlSpeed = mgr.Monitor.DownloadRate;
+        long ulSpeed = mgr.Monitor.UploadRate;
+        string speeds = (dlSpeed > 0 || ulSpeed > 0)
+            ? $"  ↓ {TorrentEngine.FormatSpeed(dlSpeed)} ↑ {TorrentEngine.FormatSpeed(ulSpeed)}"
+            : "";
+
+        long size = mgr.Torrent?.Size ?? 0;
+        string sizeStr = size > 0 ? $"  {TorrentEngine.FormatBytes(size)}" : "";
+
+        return $"{state}{speeds}{sizeStr}  Peers: {mgr.OpenConnections}";
+    }
 
     // ===== Clipboard Magnet Monitor =====
 
@@ -1104,7 +1407,6 @@ public partial class Form1 : Form
     {
         _clipboardTimer = new System.Windows.Forms.Timer { Interval = 1000 };
         _clipboardTimer.Tick += ClipboardTick;
-        // Actual start is deferred to Form.Load via EnsureClipboardMonitorRunning()
     }
 
     private void EnsureClipboardMonitorRunning()
@@ -1113,7 +1415,6 @@ public partial class Form1 : Form
         if (_clipboardTimer == null || _clipboardTimer.Enabled) return;
         try
         {
-            // Capture current clipboard so first tick doesn't re-send stale content
             _lastClipboardText = Clipboard.ContainsText() ? Clipboard.GetText() : null;
         }
         catch { _lastClipboardText = null; }
@@ -1137,8 +1438,6 @@ public partial class Form1 : Form
 
     private void ClipboardTick(object? sender, EventArgs e)
     {
-        if (_qbtExePath == null) return;
-
         try
         {
             if (!Clipboard.ContainsText()) return;
@@ -1149,36 +1448,8 @@ public partial class Form1 : Form
 
             if (text.StartsWith("magnet:?", StringComparison.OrdinalIgnoreCase))
             {
-                // Use the watch folder as download destination so QB downloads right where we're watching
-                string? savePath = !string.IsNullOrWhiteSpace(txtFolderPath.Text) ? txtFolderPath.Text : null;
-
-                Log($"Clipboard magnet detected — sending to qBittorrent...");
-                if (savePath != null)
-                    Log($"Download path: {savePath}");
-                lblQbtStatus.Text = "Adding magnet from clipboard...";
-                bool ok = QBitLocal.AddMagnet(_qbtExePath, text, savePath);
-                if (ok)
-                {
-                    Log("Magnet sent to qBittorrent");
-                    lblQbtStatus.Text = savePath != null
-                        ? $"Magnet sent — downloading to: {savePath}"
-                        : "Magnet sent to qBittorrent!";
-                    lblQbtStatus.ForeColor = Green;
-
-                    // Auto-start watching if not already active
-                    if (savePath != null && btnStart.Enabled)
-                    {
-                        Log("Auto-starting watch for downloaded content...");
-                        tabControl.SelectedTab = tabInstaller;
-                        BtnStart_Click(null, EventArgs.Empty);
-                    }
-                }
-                else
-                {
-                    Log("Failed to send magnet");
-                    lblQbtStatus.Text = "Failed to send magnet";
-                    lblQbtStatus.ForeColor = Red;
-                }
+                Log("Clipboard magnet detected — adding to built-in engine...");
+                _ = AddMagnetToEngineAsync(text);
             }
         }
         catch { /* clipboard may be locked by another app */ }

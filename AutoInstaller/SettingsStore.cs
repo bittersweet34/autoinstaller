@@ -13,7 +13,6 @@ public class AppSettings
     public decimal DelayValue { get; set; } = 10;
     public int TimeUnitIndex { get; set; } // 0=Seconds, 1=Minutes, 2=Hours
     public string NtfyTopic { get; set; } = "";
-    public string QbtExePath { get; set; } = "";
     public bool ClipboardMagnet { get; set; } = true;
     public bool InstallDirectX { get; set; } = true;
     public bool InstallVCRedist { get; set; } = true;
