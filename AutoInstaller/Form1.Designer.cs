@@ -4,23 +4,23 @@ partial class Form1
 {
     private System.ComponentModel.IContainer components = null;
 
-    // ── Color Palette ──────────────────────────────────────
-    static readonly Color BG          = Color.FromArgb(18, 18, 28);
-    static readonly Color Surface     = Color.FromArgb(26, 28, 42);
-    static readonly Color Panel_      = Color.FromArgb(32, 34, 52);
-    static readonly Color ControlBg   = Color.FromArgb(40, 42, 62);
-    static readonly Color Border      = Color.FromArgb(58, 62, 88);
-    static readonly Color TextPrimary = Color.FromArgb(210, 215, 235);
-    static readonly Color TextDim     = Color.FromArgb(130, 140, 170);
-    static readonly Color Accent      = Color.FromArgb(88, 140, 240);
-    static readonly Color AccentDim   = Color.FromArgb(60, 100, 180);
-    static readonly Color Green       = Color.FromArgb(72, 190, 110);
-    static readonly Color GreenDim    = Color.FromArgb(45, 130, 75);
-    static readonly Color Red         = Color.FromArgb(235, 80, 95);
-    static readonly Color RedDim      = Color.FromArgb(160, 50, 60);
-    static readonly Color Purple      = Color.FromArgb(140, 100, 240);
-    static readonly Color LogGreen    = Color.FromArgb(100, 230, 130);
-    static readonly Color LogBg       = Color.FromArgb(14, 14, 22);
+    // ── Color Palette ♥ puppy girl pink Y2K ♥ ──────────────
+    static readonly Color BG          = Color.FromArgb(30, 10, 22);       // deep plum bg
+    static readonly Color Surface     = Color.FromArgb(45, 18, 35);       // dark rose surface
+    static readonly Color Panel_      = Color.FromArgb(55, 22, 42);       // panel berry
+    static readonly Color ControlBg   = Color.FromArgb(65, 28, 50);       // control mauve
+    static readonly Color Border      = Color.FromArgb(120, 50, 90);      // pink border
+    static readonly Color TextPrimary = Color.FromArgb(255, 220, 240);    // soft pink white
+    static readonly Color TextDim     = Color.FromArgb(190, 130, 165);    // muted rose
+    static readonly Color Accent      = Color.FromArgb(255, 105, 180);    // hot pink ♥
+    static readonly Color AccentDim   = Color.FromArgb(200, 70, 140);     // deeper pink
+    static readonly Color Green       = Color.FromArgb(255, 150, 200);    // pastel pink (play)
+    static readonly Color GreenDim    = Color.FromArgb(200, 100, 155);    // muted play
+    static readonly Color Red         = Color.FromArgb(255, 80, 120);     // coral red
+    static readonly Color RedDim      = Color.FromArgb(180, 50, 80);      // dark coral
+    static readonly Color Purple      = Color.FromArgb(220, 130, 255);    // lilac sparkle
+    static readonly Color LogGreen    = Color.FromArgb(255, 180, 220);    // pink log text
+    static readonly Color LogBg       = Color.FromArgb(22, 8, 16);        // deep dark plum
 
     protected override void Dispose(bool disposing)
     {
@@ -108,7 +108,7 @@ partial class Form1
         this.components = new System.ComponentModel.Container();
         this.AutoScaleMode = AutoScaleMode.Dpi;
         this.ClientSize = new Size(980, 780);
-        this.Text = "  ⚡ Auto Installer";
+        this.Text = "  ♥ ~*~ Auto Installer ~*~ ♥";
         this.FormBorderStyle = FormBorderStyle.Sizable;
         this.MinimumSize = new Size(850, 700);
         this.StartPosition = FormStartPosition.CenterScreen;
@@ -132,7 +132,7 @@ partial class Form1
 
         tabInstaller = new TabPage
         {
-            Text = "⚡ Installer",
+            Text = "♥ Installer",
             BackColor = BG,
             ForeColor = TextPrimary,
             AutoScroll = true,
@@ -141,14 +141,14 @@ partial class Form1
 
         tabQBittorrent = new TabPage
         {
-            Text = "🌐 Browser",
+            Text = "♥ Browser",
             BackColor = BG,
             ForeColor = TextPrimary
         };
 
         tabLibrary = new TabPage
         {
-            Text = "🎮 Library",
+            Text = "♥ Library",
             BackColor = BG,
             ForeColor = TextPrimary
         };
@@ -160,7 +160,7 @@ partial class Form1
         // -- Title --
         lblTitle = new Label
         {
-            Text = "⚡ Auto Installer",
+            Text = "~*~ Auto Installer ~*~",
             Font = new Font("Segoe UI", 22F, FontStyle.Bold),
             ForeColor = Accent,
             AutoSize = true,
@@ -169,7 +169,7 @@ partial class Form1
         };
 
         // -- Section: Watch Folder --
-        grpFolder = MakeSection("📁  Watch Folder", 16, 52, 460, 75);
+        grpFolder = MakeSection("♥  Watch Folder", 16, 52, 460, 75);
         txtFolderPath = MakeTextBox(12, 32, 350, readOnly: true, placeholder: "Select folder to watch...");
         btnBrowse = MakeBtn("Browse", ControlBg, Accent, 88, 28);
         btnBrowse.Location = new Point(368, 31);
@@ -207,13 +207,13 @@ partial class Form1
         };
 
         // -- Section: Setup File --
-        grpSetupFile = MakeSection("🔧  Setup File Name", 16, 162, 460, 72);
+        grpSetupFile = MakeSection("♥  Setup File Name", 16, 162, 460, 72);
         txtSetupFileName = MakeTextBox(12, 32, 436, placeholder: "e.g. setup.exe");
         txtSetupFileName.Text = "setup";
         grpSetupFile.Controls.Add(txtSetupFileName);
 
         // -- Section: Install Location --
-        grpInstallLoc = MakeSection("💾  Install Location", 16, 240, 460, 108);
+        grpInstallLoc = MakeSection("♥  Install Location", 16, 240, 460, 108);
 
         lblDrive = new Label
         {
@@ -246,7 +246,7 @@ partial class Form1
         grpInstallLoc.Controls.Add(btnBrowseInstall);
 
         // -- Section: Delay --
-        grpTimer = MakeSection("⏱️  Delay Before Install", 16, 354, 460, 72);
+        grpTimer = MakeSection("♥  Delay Before Install", 16, 354, 460, 72);
         nudDelay = new NumericUpDown
         {
             Location = new Point(12, 32), Size = new Size(310, 28),
@@ -267,7 +267,7 @@ partial class Form1
         grpTimer.Controls.Add(cmbTimeUnit);
 
         // -- Section: Notifications --
-        grpNotify = MakeSection("🔔  Mobile Notification (ntfy.sh)", 16, 432, 460, 72);
+        grpNotify = MakeSection("♥  Mobile Notification (ntfy.sh)", 16, 432, 460, 72);
         txtNtfyTopic = MakeTextBox(12, 32, 350, placeholder: "your-secret-topic-name");
         btnTestNotify = MakeBtn("Test", Purple, Purple, 80, 28);
         btnTestNotify.Location = new Point(368, 31);
@@ -275,7 +275,7 @@ partial class Form1
         grpNotify.Controls.Add(btnTestNotify);
 
         // -- Section: Install Options --
-        grpInstallOpts = MakeSection("🔄  Install Options", 16, 510, 460, 100);
+        grpInstallOpts = MakeSection("♥  Install Options", 16, 510, 460, 100);
         chkInstallDirectX = new CheckBox
         {
             Text = "Install DirectX",
@@ -292,7 +292,7 @@ partial class Form1
         };
         chkAddToSteam = new CheckBox
         {
-            Text = "🎮 Add installed games to Steam library",
+            Text = "♥ Add installed games to Steam library",
             Location = new Point(12, 58), Size = new Size(436, 24),
             ForeColor = TextPrimary, Checked = false,
             Font = new Font("Segoe UI", 9.5F)
@@ -333,16 +333,16 @@ partial class Form1
         };
 
         // -- Action Buttons --
-        btnStart = MakeBtn("▶  Start Watching", Green, GreenDim, 224, 40);
+        btnStart = MakeBtn("♥  Start Watching", Green, GreenDim, 224, 40);
         btnStart.Location = new Point(16, 792);
         btnStart.Font = new Font("Segoe UI Semibold", 11.5F);
 
-        btnStop = MakeBtn("■  Stop", Red, RedDim, 224, 40);
+        btnStop = MakeBtn("×  Stop", Red, RedDim, 224, 40);
         btnStop.Location = new Point(252, 792);
         btnStop.Font = new Font("Segoe UI Semibold", 11.5F);
         btnStop.Enabled = false;
 
-        btnTestSetup = MakeBtn("🔧  Test Setup Exe...", Panel_, Accent, 460, 34);
+        btnTestSetup = MakeBtn("♥  Test Setup Exe...", Panel_, Accent, 460, 34);
         btnTestSetup.Location = new Point(16, 840);
         btnTestSetup.Font = new Font("Segoe UI", 10F);
 
@@ -524,7 +524,7 @@ partial class Form1
 
         lblLibraryTitle = new Label
         {
-            Text = "🎮  Game Library",
+            Text = "♥  Game Library  ♥",
             Font = new Font("Segoe UI", 16F, FontStyle.Bold),
             ForeColor = Accent,
             AutoSize = true,

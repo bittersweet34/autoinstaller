@@ -1521,7 +1521,7 @@ public partial class Form1 : Form
 
         // Hover effect
         var normalBg = Surface;
-        var hoverBg = Color.FromArgb(38, 40, 58);
+        var hoverBg = Color.FromArgb(65, 28, 50);
 
         void OnEnter(object? s, EventArgs e) => card.BackColor = hoverBg;
         void OnLeave(object? s, EventArgs e) => card.BackColor = normalBg;
