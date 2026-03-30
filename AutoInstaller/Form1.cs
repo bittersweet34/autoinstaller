@@ -40,7 +40,7 @@ public partial class Form1 : Form
         LoadBookmarks();
         StartClipboardMonitor();
         FormClosing += (s, e) => SaveSettings();
-        Load += (s, e) => EnsureClipboardMonitorRunning();
+        Load += (s, e) => { EnsureClipboardMonitorRunning(); RefreshLibrary(); };
     }
 
     private void LoadSettings()
@@ -81,6 +81,7 @@ public partial class Form1 : Form
         chkClipboardMagnet.Checked = s.ClipboardMagnet;
         chkInstallDirectX.Checked = s.InstallDirectX;
         chkInstallVCRedist.Checked = s.InstallVCRedist;
+        chkAddToSteam.Checked = s.AddToSteamLibrary;
     }
 
     private void SaveSettings()
@@ -99,7 +100,8 @@ public partial class Form1 : Form
             QbtExePath = _qbtExePath ?? "",
             ClipboardMagnet = chkClipboardMagnet.Checked,
             InstallDirectX = chkInstallDirectX.Checked,
-            InstallVCRedist = chkInstallVCRedist.Checked
+            InstallVCRedist = chkInstallVCRedist.Checked,
+            AddToSteamLibrary = chkAddToSteam.Checked
         };
         SettingsStore.Save(s);
     }
@@ -147,6 +149,15 @@ public partial class Form1 : Form
         // Bookmark events
         btnAddBookmark.Click += BtnAddBookmark_Click;
         chkClipboardMagnet.CheckedChanged += ChkClipboardMagnet_CheckedChanged;
+
+        // Library events
+        btnRefreshLibrary.Click += (s, e) => RefreshLibrary();
+        txtInstallPath.TextChanged += (s, e) => OnInstallLocationChanged();
+        tabControl.SelectedIndexChanged += (s, e) =>
+        {
+            if (tabControl.SelectedTab == tabLibrary)
+                RefreshLibrary();
+        };
     }
 
     private void BtnBrowse_Click(object? sender, EventArgs e)
@@ -632,12 +643,7 @@ public partial class Form1 : Form
     {
         if (_detectedSetupPath == null) return;
 
-        var drive = (DriveItem)cmbDrive.SelectedItem!;
-        string baseDir = txtInstallPath.Text.Trim();
-        if (string.IsNullOrWhiteSpace(baseDir))
-        {
-            baseDir = Path.Combine(drive.DrivePath, "InstalledApps");
-        }
+        string baseDir = GetInstallBasePath();
 
         // Create a game-named subfolder from the setup's parent folder
         string gameName = GetGameName(_detectedSetupPath);
@@ -910,6 +916,27 @@ public partial class Form1 : Form
             Log($"Finished in {FormatTime((int)elapsed.TotalSeconds)} — exit code {code}");
             Log($"Installed size: {size}");
             _ = SendNtfyNotificationAsync($"\u2705 Install complete! ({FormatTime((int)elapsed.TotalSeconds)}, {size})");
+
+            // Add to Steam library if enabled
+            if (chkAddToSteam.Checked && _installDir != null)
+            {
+                var gameExe = SteamIntegration.FindGameExe(_installDir);
+                if (gameExe != null)
+                {
+                    string steamName = Path.GetFileName(_installDir) ?? "Unknown";
+                    bool added = SteamIntegration.AddNonSteamGame(steamName, gameExe);
+                    if (added)
+                    {
+                        Log($"Added to Steam: {steamName}");
+                        Log($"Exe: {Path.GetFileName(gameExe)}");
+                        Log("Restart Steam to see it in your library");
+                    }
+                    else
+                        Log("Could not add to Steam \u2014 is Steam installed?");
+                }
+                else
+                    Log("No game executable found for Steam");
+            }
         }
         else
         {
@@ -1311,6 +1338,220 @@ public partial class Form1 : Form
             BookmarkStore.Save(_bookmarks);
             RebuildBookmarkCarousel();
             Log($"Bookmark added: {title}");
+        }
+    }
+
+    // ======================================================
+    //  Game Library
+    // ======================================================
+
+    private string GetInstallBasePath()
+    {
+        string path = txtInstallPath.Text.Trim();
+        if (string.IsNullOrWhiteSpace(path) && cmbDrive.SelectedItem is DriveItem drive)
+            path = Path.Combine(drive.DrivePath, "InstalledApps");
+        return path;
+    }
+
+    private void OnInstallLocationChanged()
+    {
+        string installPath = GetInstallBasePath();
+        lblLibraryPath.Text = string.IsNullOrWhiteSpace(installPath)
+            ? "Set an install location on the Installer tab"
+            : installPath;
+
+        if (tabControl.SelectedTab == tabLibrary)
+            RefreshLibrary();
+    }
+
+    private void RefreshLibrary()
+    {
+        flpLibrary.SuspendLayout();
+
+        // Dispose old cards
+        for (int i = flpLibrary.Controls.Count - 1; i >= 0; i--)
+            flpLibrary.Controls[i].Dispose();
+
+        string installPath = GetInstallBasePath();
+        if (string.IsNullOrWhiteSpace(installPath) || !Directory.Exists(installPath))
+        {
+            lblLibraryPath.Text = string.IsNullOrWhiteSpace(installPath)
+                ? "Set an install location on the Installer tab"
+                : $"Path not found: {installPath}";
+            AddEmptyLibraryMessage();
+            flpLibrary.ResumeLayout();
+            return;
+        }
+
+        lblLibraryPath.Text = installPath;
+
+        DirectoryInfo[] gameDirs;
+        try
+        {
+            gameDirs = new DirectoryInfo(installPath)
+                .GetDirectories()
+                .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch
+        {
+            AddEmptyLibraryMessage("Cannot access install folder");
+            flpLibrary.ResumeLayout();
+            return;
+        }
+
+        if (gameDirs.Length == 0)
+        {
+            AddEmptyLibraryMessage("No games installed yet");
+            flpLibrary.ResumeLayout();
+            return;
+        }
+
+        foreach (var dir in gameDirs)
+        {
+            var card = CreateGameCard(dir);
+            flpLibrary.Controls.Add(card);
+        }
+
+        flpLibrary.ResumeLayout();
+    }
+
+    private void AddEmptyLibraryMessage(string text = "No games found")
+    {
+        var lbl = new Label
+        {
+            Text = text,
+            AutoSize = false,
+            Size = new Size(400, 60),
+            ForeColor = TextDim,
+            Font = new Font("Segoe UI", 13F),
+            TextAlign = ContentAlignment.MiddleCenter,
+            Margin = new Padding(20)
+        };
+        flpLibrary.Controls.Add(lbl);
+    }
+
+    private Panel CreateGameCard(DirectoryInfo gameDir)
+    {
+        string gameName = gameDir.Name;
+        string? exePath = SteamIntegration.FindGameExe(gameDir.FullName);
+        string sizeStr = GetFolderSizeString(gameDir.FullName);
+
+        var card = new Panel
+        {
+            Size = new Size(200, 110),
+            BackColor = Surface,
+            Margin = new Padding(8),
+            Cursor = exePath != null ? Cursors.Hand : Cursors.Default,
+            Tag = exePath
+        };
+
+        // Top accent bar
+        var topBar = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 3,
+            BackColor = exePath != null ? Green : Border
+        };
+
+        // Game name
+        var lblName = new Label
+        {
+            Text = gameName,
+            Location = new Point(10, 12),
+            Size = new Size(180, 44),
+            ForeColor = TextPrimary,
+            Font = new Font("Segoe UI Semibold", 10.5F),
+            AutoEllipsis = true,
+            BackColor = Color.Transparent
+        };
+
+        // Size label
+        var lblSize = new Label
+        {
+            Text = sizeStr,
+            Location = new Point(10, 58),
+            Size = new Size(100, 18),
+            ForeColor = TextDim,
+            Font = new Font("Segoe UI", 8.5F),
+            BackColor = Color.Transparent
+        };
+
+        // Play / No exe label
+        var lblPlay = new Label
+        {
+            Text = exePath != null ? "▶  Play" : "No exe found",
+            Location = new Point(10, 80),
+            Size = new Size(180, 22),
+            ForeColor = exePath != null ? Green : Red,
+            Font = new Font("Segoe UI Semibold", 9.5F),
+            BackColor = Color.Transparent
+        };
+
+        card.Controls.Add(topBar);
+        card.Controls.Add(lblName);
+        card.Controls.Add(lblSize);
+        card.Controls.Add(lblPlay);
+
+        // Hover effect
+        var normalBg = Surface;
+        var hoverBg = Color.FromArgb(38, 40, 58);
+
+        void OnEnter(object? s, EventArgs e) => card.BackColor = hoverBg;
+        void OnLeave(object? s, EventArgs e) => card.BackColor = normalBg;
+
+        card.MouseEnter += OnEnter;
+        card.MouseLeave += OnLeave;
+        foreach (Control c in card.Controls)
+        {
+            c.MouseEnter += OnEnter;
+            c.MouseLeave += OnLeave;
+        }
+
+        // Click to launch
+        if (exePath != null)
+        {
+            void OnClick(object? s, EventArgs e) => LaunchGame(gameName, exePath);
+            card.Click += OnClick;
+            foreach (Control c in card.Controls)
+                c.Click += OnClick;
+        }
+
+        // Right-click context menu
+        var ctx = new ContextMenuStrip { BackColor = Panel_, ForeColor = TextPrimary };
+        ctx.Items.Add("Open folder", null, (s, e) =>
+        {
+            try { Process.Start("explorer.exe", gameDir.FullName); } catch { }
+        });
+        if (exePath != null)
+        {
+            ctx.Items.Add("Launch", null, (s, e) => LaunchGame(gameName, exePath));
+        }
+        card.ContextMenuStrip = ctx;
+        foreach (Control c in card.Controls)
+            c.ContextMenuStrip = ctx;
+
+        return card;
+    }
+
+    private void LaunchGame(string gameName, string exePath)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = exePath,
+                WorkingDirectory = Path.GetDirectoryName(exePath),
+                UseShellExecute = true
+            };
+            Process.Start(psi);
+            Log($"Launched: {gameName}");
+        }
+        catch (Exception ex)
+        {
+            Log($"Failed to launch {gameName}: {ex.Message}");
+            MessageBox.Show($"Could not launch {gameName}:\n{ex.Message}",
+                "Launch Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 }
