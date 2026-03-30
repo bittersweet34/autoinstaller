@@ -1,10 +1,10 @@
 bin/
 obj/
 output/
-release/
-release2/
-release3/
+release*/
 *.user
 *.pdb
+*.zip
 .vs/
 setup-FIXED.exe
+artwork_cache/

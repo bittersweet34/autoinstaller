@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Win32;
+using craftersmine.SteamGridDBNet;
 
 namespace AutoInstaller;
 
@@ -29,6 +30,9 @@ public partial class Form1 : Form
 
     // Bookmarks
     private List<Bookmark> _bookmarks = [];
+
+    // SteamGridDB artwork
+    private static readonly string ArtworkCacheDir = Path.Combine(AppContext.BaseDirectory, "artwork_cache");
 
     public Form1()
     {
@@ -83,6 +87,8 @@ public partial class Form1 : Form
         chkInstallDirectX.Checked = s.InstallDirectX;
         chkInstallVCRedist.Checked = s.InstallVCRedist;
         chkAddToSteam.Checked = s.AddToSteamLibrary;
+        if (!string.IsNullOrEmpty(s.SgdbApiKey))
+            txtSgdbApiKey.Text = s.SgdbApiKey;
     }
 
     private void SaveSettings()
@@ -102,7 +108,8 @@ public partial class Form1 : Form
             ClipboardMagnet = chkClipboardMagnet.Checked,
             InstallDirectX = chkInstallDirectX.Checked,
             InstallVCRedist = chkInstallVCRedist.Checked,
-            AddToSteamLibrary = chkAddToSteam.Checked
+            AddToSteamLibrary = chkAddToSteam.Checked,
+            SgdbApiKey = txtSgdbApiKey.Text.Trim()
         };
         SettingsStore.Save(s);
     }
@@ -1415,6 +1422,9 @@ public partial class Form1 : Form
         }
 
         flpLibrary.ResumeLayout();
+
+        // Fetch artwork asynchronously after layout is done
+        _ = FetchAllArtworkAsync(gameDirs);
     }
 
     private void AddEmptyLibraryMessage(string text = "No games found")
@@ -1440,29 +1450,44 @@ public partial class Form1 : Form
 
         var card = new Panel
         {
-            Size = new Size(200, 110),
+            Size = new Size(160, 260),
             BackColor = Surface,
             Margin = new Padding(8),
             Cursor = exePath != null ? Cursors.Hand : Cursors.Default,
-            Tag = exePath
+            Tag = exePath,
+            Name = $"card_{gameName}"
         };
 
-        // Top accent bar
-        var topBar = new Panel
+        // Artwork PictureBox (top portion)
+        var picArt = new PictureBox
         {
-            Dock = DockStyle.Top,
-            Height = 3,
-            BackColor = exePath != null ? Green : Border
+            Name = "picArt",
+            Location = new Point(0, 0),
+            Size = new Size(160, 160),
+            SizeMode = PictureBoxSizeMode.Zoom,
+            BackColor = Panel_
         };
+
+        // Try loading cached artwork
+        string cachedPath = GetCachedArtworkPath(gameName);
+        if (File.Exists(cachedPath))
+        {
+            try
+            {
+                using var fs = new FileStream(cachedPath, FileMode.Open, FileAccess.Read);
+                picArt.Image = Image.FromStream(fs);
+            }
+            catch { }
+        }
 
         // Game name
         var lblName = new Label
         {
             Text = gameName,
-            Location = new Point(10, 12),
-            Size = new Size(180, 44),
+            Location = new Point(8, 168),
+            Size = new Size(144, 38),
             ForeColor = TextPrimary,
-            Font = new Font("Segoe UI Semibold", 10.5F),
+            Font = new Font("Segoe UI Semibold", 9.5F),
             AutoEllipsis = true,
             BackColor = Color.Transparent
         };
@@ -1471,10 +1496,10 @@ public partial class Form1 : Form
         var lblSize = new Label
         {
             Text = sizeStr,
-            Location = new Point(10, 58),
+            Location = new Point(8, 206),
             Size = new Size(100, 18),
             ForeColor = TextDim,
-            Font = new Font("Segoe UI", 8.5F),
+            Font = new Font("Segoe UI", 8F),
             BackColor = Color.Transparent
         };
 
@@ -1482,14 +1507,14 @@ public partial class Form1 : Form
         var lblPlay = new Label
         {
             Text = exePath != null ? "▶  Play" : "No exe found",
-            Location = new Point(10, 80),
-            Size = new Size(180, 22),
+            Location = new Point(8, 228),
+            Size = new Size(144, 22),
             ForeColor = exePath != null ? Green : Red,
-            Font = new Font("Segoe UI Semibold", 9.5F),
+            Font = new Font("Segoe UI Semibold", 9F),
             BackColor = Color.Transparent
         };
 
-        card.Controls.Add(topBar);
+        card.Controls.Add(picArt);
         card.Controls.Add(lblName);
         card.Controls.Add(lblSize);
         card.Controls.Add(lblPlay);
@@ -1679,5 +1704,114 @@ public partial class Form1 : Form
             MessageBox.Show($"Could not launch {gameName}:\n{ex.Message}",
                 "Launch Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    // ── SteamGridDB Artwork ─────────────────────────────────
+
+    private static string GetCachedArtworkPath(string gameName)
+    {
+        // Sanitize folder name for use as a filename
+        string safe = string.Join("_", gameName.Split(Path.GetInvalidFileNameChars()));
+        return Path.Combine(ArtworkCacheDir, safe + ".png");
+    }
+
+    private async Task FetchAllArtworkAsync(DirectoryInfo[] gameDirs)
+    {
+        string apiKey = txtSgdbApiKey.Text.Trim();
+        if (string.IsNullOrWhiteSpace(apiKey))
+            return;
+
+        Directory.CreateDirectory(ArtworkCacheDir);
+
+        SteamGridDb sgdb;
+        try
+        {
+            sgdb = new SteamGridDb(apiKey);
+        }
+        catch
+        {
+            Log("SteamGridDB: invalid API key format");
+            return;
+        }
+
+        foreach (var dir in gameDirs)
+        {
+            string gameName = dir.Name;
+            string cachedPath = GetCachedArtworkPath(gameName);
+
+            // Skip if already cached
+            if (File.Exists(cachedPath))
+                continue;
+
+            try
+            {
+                await FetchAndCacheArtworkAsync(sgdb, gameName, cachedPath);
+            }
+            catch { }
+        }
+    }
+
+    private async Task FetchAndCacheArtworkAsync(SteamGridDb sgdb, string gameName, string cachedPath)
+    {
+        // Search for the game
+        var games = await sgdb.SearchForGamesAsync(gameName);
+        if (games == null || games.Length == 0)
+            return;
+
+        var game = games[0];
+
+        // Try grids first (cover art, vertical)
+        var grids = await sgdb.GetGridsByGameIdAsync(game.Id);
+        string? imageUrl = null;
+        if (grids != null && grids.Length > 0)
+        {
+            imageUrl = grids[0].FullImageUrl;
+        }
+        else
+        {
+            // Fallback to heroes
+            var heroes = await sgdb.GetHeroesByGameIdAsync(game.Id);
+            if (heroes != null && heroes.Length > 0)
+                imageUrl = heroes[0].FullImageUrl;
+        }
+
+        if (string.IsNullOrWhiteSpace(imageUrl))
+            return;
+
+        // Download image
+        using var resp = await _httpClient.GetAsync(imageUrl);
+        if (!resp.IsSuccessStatusCode) return;
+
+        var data = await resp.Content.ReadAsByteArrayAsync();
+        await File.WriteAllBytesAsync(cachedPath, data);
+
+        // Update the card on the UI thread
+        if (IsDisposed) return;
+        BeginInvoke(() =>
+        {
+            var card = FindCardByGameName(gameName);
+            if (card == null) return;
+            var pic = card.Controls.OfType<PictureBox>().FirstOrDefault(p => p.Name == "picArt");
+            if (pic == null) return;
+            try
+            {
+                using var fs = new FileStream(cachedPath, FileMode.Open, FileAccess.Read);
+                pic.Image = Image.FromStream(fs);
+            }
+            catch { }
+        });
+
+        Log($"SteamGridDB: artwork cached for {gameName}");
+    }
+
+    private Panel? FindCardByGameName(string gameName)
+    {
+        string cardName = $"card_{gameName}";
+        foreach (Control c in flpLibrary.Controls)
+        {
+            if (c is Panel p && p.Name == cardName)
+                return p;
+        }
+        return null;
     }
 }

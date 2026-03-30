@@ -146,6 +146,13 @@ partial class Form1
             ForeColor = TextPrimary
         };
 
+        tabLibrary = new TabPage
+        {
+            Text = "🎮 Library",
+            BackColor = BG,
+            ForeColor = TextPrimary
+        };
+
         // ═══════════════════════════════════════════════════
         //  TAB 1 — Installer
         // ═══════════════════════════════════════════════════
@@ -268,7 +275,7 @@ partial class Form1
         grpNotify.Controls.Add(btnTestNotify);
 
         // -- Section: Install Options --
-        grpInstallOpts = MakeSection("🔄  Install Options", 16, 510, 460, 72);
+        grpInstallOpts = MakeSection("🔄  Install Options", 16, 510, 460, 100);
         chkInstallDirectX = new CheckBox
         {
             Text = "Install DirectX",
@@ -283,14 +290,22 @@ partial class Form1
             ForeColor = TextPrimary, Checked = true,
             Font = new Font("Segoe UI", 9.5F)
         };
+        chkAddToSteam = new CheckBox
+        {
+            Text = "🎮 Add installed games to Steam library",
+            Location = new Point(12, 58), Size = new Size(436, 24),
+            ForeColor = TextPrimary, Checked = false,
+            Font = new Font("Segoe UI", 9.5F)
+        };
         grpInstallOpts.Controls.Add(chkInstallDirectX);
         grpInstallOpts.Controls.Add(chkInstallVCRedist);
+        grpInstallOpts.Controls.Add(chkAddToSteam);
 
         // -- Status + Progress --
         lblStatus = new Label
         {
             Text = "● Status: Idle",
-            Location = new Point(16, 592),
+            Location = new Point(16, 620),
             Size = new Size(460, 26),
             ForeColor = TextDim,
             Font = new Font("Segoe UI Semibold", 10.5F)
@@ -298,7 +313,7 @@ partial class Form1
 
         progressBar = new ProgressBar
         {
-            Location = new Point(16, 620),
+            Location = new Point(16, 648),
             Size = new Size(460, 8),
             Style = ProgressBarStyle.Continuous
         };
@@ -306,7 +321,7 @@ partial class Form1
         // -- Log Console --
         txtLog = new TextBox
         {
-            Location = new Point(16, 636),
+            Location = new Point(16, 664),
             Size = new Size(460, 120),
             BackColor = LogBg,
             ForeColor = LogGreen,
@@ -319,16 +334,16 @@ partial class Form1
 
         // -- Action Buttons --
         btnStart = MakeBtn("▶  Start Watching", Green, GreenDim, 224, 40);
-        btnStart.Location = new Point(16, 764);
+        btnStart.Location = new Point(16, 792);
         btnStart.Font = new Font("Segoe UI Semibold", 11.5F);
 
         btnStop = MakeBtn("■  Stop", Red, RedDim, 224, 40);
-        btnStop.Location = new Point(252, 764);
+        btnStop.Location = new Point(252, 792);
         btnStop.Font = new Font("Segoe UI Semibold", 11.5F);
         btnStop.Enabled = false;
 
         btnTestSetup = MakeBtn("🔧  Test Setup Exe...", Panel_, Accent, 460, 34);
-        btnTestSetup.Location = new Point(16, 812);
+        btnTestSetup.Location = new Point(16, 840);
         btnTestSetup.Font = new Font("Segoe UI", 10F);
 
         // -- Add all to Tab 1 --
@@ -495,7 +510,77 @@ partial class Form1
         tabQBittorrent.Controls.Add(pnlBookmarks);
         tabQBittorrent.Controls.Add(pnlQbtTop);
 
+        // ═══════════════════════════════════════════════════
+        //  TAB 3 — Library
+        // ═══════════════════════════════════════════════════
+
+        pnlLibraryHeader = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 90,
+            BackColor = Surface,
+            Padding = new Padding(12, 8, 12, 8)
+        };
+
+        lblLibraryTitle = new Label
+        {
+            Text = "🎮  Game Library",
+            Font = new Font("Segoe UI", 16F, FontStyle.Bold),
+            ForeColor = Accent,
+            AutoSize = true,
+            Location = new Point(12, 12),
+            BackColor = Color.Transparent
+        };
+
+        btnRefreshLibrary = MakeBtn("↻ Refresh", ControlBg, Accent, 90, 30);
+        btnRefreshLibrary.Location = new Point(860, 10);
+        btnRefreshLibrary.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        btnRefreshLibrary.Font = new Font("Segoe UI Semibold", 9.5F);
+
+        lblLibraryPath = new Label
+        {
+            Text = "",
+            Location = new Point(220, 18),
+            Size = new Size(620, 20),
+            ForeColor = TextDim,
+            Font = new Font("Segoe UI", 9F),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+        };
+
+        lblSgdbApiKey = new Label
+        {
+            Text = "SteamGridDB API Key:",
+            Location = new Point(12, 52),
+            AutoSize = true,
+            ForeColor = TextDim,
+            Font = new Font("Segoe UI", 9F),
+            BackColor = Color.Transparent
+        };
+
+        txtSgdbApiKey = MakeTextBox(160, 50, 400, placeholder: "Paste your API key from steamgriddb.com/profile/preferences/api");
+        txtSgdbApiKey.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        txtSgdbApiKey.UseSystemPasswordChar = true;
+
+        pnlLibraryHeader.Controls.Add(lblLibraryTitle);
+        pnlLibraryHeader.Controls.Add(btnRefreshLibrary);
+        pnlLibraryHeader.Controls.Add(lblLibraryPath);
+        pnlLibraryHeader.Controls.Add(lblSgdbApiKey);
+        pnlLibraryHeader.Controls.Add(txtSgdbApiKey);
+
+        flpLibrary = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoScroll = true,
+            BackColor = BG,
+            Padding = new Padding(16, 12, 16, 12),
+            WrapContents = true
+        };
+
+        tabLibrary.Controls.Add(flpLibrary);
+        tabLibrary.Controls.Add(pnlLibraryHeader);
+
         // === Assemble ===
+        tabControl.TabPages.Add(tabLibrary);
         tabControl.TabPages.Add(tabInstaller);
         tabControl.TabPages.Add(tabQBittorrent);
         this.Controls.Add(tabControl);
@@ -532,6 +617,16 @@ partial class Form1
         sf.Dispose();
     }
 
+    // --- Tab 0: Library ---
+    private TabPage tabLibrary;
+    private Panel pnlLibraryHeader;
+    private Label lblLibraryTitle;
+    private Label lblLibraryPath;
+    private Button btnRefreshLibrary;
+    private FlowLayoutPanel flpLibrary;
+    private Label lblSgdbApiKey;
+    private TextBox txtSgdbApiKey;
+
     // --- Tab 1: Installer ---
     private TabControl tabControl;
     private TabPage tabInstaller;
@@ -566,6 +661,7 @@ partial class Form1
     private Panel grpInstallOpts;
     private CheckBox chkInstallDirectX;
     private CheckBox chkInstallVCRedist;
+    private CheckBox chkAddToSteam;
 
     // --- Tab 2: Browser ---
     private Panel pnlQbtTop;

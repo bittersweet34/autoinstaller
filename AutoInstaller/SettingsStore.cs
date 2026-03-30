@@ -17,6 +17,8 @@ public class AppSettings
     public bool ClipboardMagnet { get; set; } = true;
     public bool InstallDirectX { get; set; } = true;
     public bool InstallVCRedist { get; set; } = true;
+    public bool AddToSteamLibrary { get; set; } = false;
+    public string SgdbApiKey { get; set; } = "";
 }
 
 public static class SettingsStore
